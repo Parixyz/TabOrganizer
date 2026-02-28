@@ -1,0 +1,4 @@
+body { min-width: 1100px; min-height: 720px; }
+.app.manager { width: 100%; min-height: 100vh; padding: 14px; }
+.manager-split { grid-template-columns: 1fr 1fr; min-height: calc(100vh - 140px); }
+.manager .pane { min-height: auto; }
