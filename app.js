@@ -360,8 +360,13 @@
   }
 
   function sendMessage(payload) {
+    const enriched = {
+      ...payload,
+      action: payload?.action || payload?.type
+    };
+
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(payload, (response) => {
+      chrome.runtime.sendMessage(enriched, (response) => {
         const err = chrome.runtime.lastError;
         if (err) {
           reject(err);

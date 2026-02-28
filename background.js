@@ -1,3 +1,14 @@
+function normalizeMessageType(rawType) {
+  const t = String(rawType || "").trim().toUpperCase();
+  const aliases = {
+    CLOSE_UNASSIGNED: "CLOSE_UNASSIGNED_TABS",
+    CLOSE_TABS_UNASSIGNED: "CLOSE_UNASSIGNED_TABS",
+    CLOSE: "CLOSE_TAB",
+    CLOSE_SINGLE_TAB: "CLOSE_TAB"
+  };
+  return aliases[t] || t;
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(["projects", "layouts"]);
   await chrome.storage.local.set({
@@ -8,7 +19,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
-    const type = message?.type;
+    const rawType = message?.type ?? message?.action ?? message?.command;
+    const type = normalizeMessageType(rawType);
     const scope = message?.scope;
     const sourceWindowId = sender?.tab?.windowId;
     console.log("[Pastel Tab Projects] message:", type, message);
@@ -93,7 +105,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       }
       default:
-        sendResponse({ ok: false, error: `Unknown message type: ${type}` });
+        sendResponse({ ok: false, error: `Unknown message type: ${type || "(empty)"}`, received: message });
     }
   })().catch((error) => {
     console.error("[Pastel Tab Projects] message handler error", error);
