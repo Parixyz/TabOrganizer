@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Pastel Tab Projects",
+  "description": "Manage tabs with pastel project grouping, sorting, and layouts.",
+  "version": "1.0.0",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pastel Tab Projects"
+  },
+  "options_page": "manager.html"
+}
