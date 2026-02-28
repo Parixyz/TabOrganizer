@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pastel Tab Projects</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body data-view="popup">
+  <main class="app compact">
+    <header class="toolbar">
+      <select id="scopeSelect"></select>
+      <button id="refreshBtn">Refresh</button>
+      <button id="sortBtn">Sort Tabs</button>
+      <button id="organizeBtn">Organize</button>
+      <button id="saveLayoutBtn">Save Layout</button>
+      <button id="loadLayoutBtn">Load Layout</button>
+      <button id="openManagerBtn">Open Manager</button>
+    </header>
+
+    <section class="create-project">
+      <input id="projectName" type="text" placeholder="Project name" />
+      <input id="projectColor" type="color" value="#f8a5c2" />
+      <button id="addProjectBtn">Add</button>
+    </section>
+
+    <section class="panes two">
+      <div class="pane">
+        <h2>Websites</h2>
+        <div id="websitesList" class="list"></div>
+      </div>
+      <div class="pane">
+        <h2>Projects</h2>
+        <div id="projectsList" class="list"></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
