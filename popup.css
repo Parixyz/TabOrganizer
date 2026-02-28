@@ -127,3 +127,15 @@ button:hover { background: #ffc6dc; }
   border-radius: 50%;
 }
 .empty-state { font-size: 12px; color: var(--muted); padding: 8px 2px; }
+
+.status {
+  margin: 6px 0 10px;
+  min-height: 18px;
+  font-size: 12px;
+  color: #7c4b5f;
+}
+
+.status.error {
+  color: #b1255a;
+  font-weight: 700;
+}

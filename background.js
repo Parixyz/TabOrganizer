@@ -1,8 +1,3 @@
-const STORAGE_DEFAULTS = {
-  projects: [],
-  layouts: {}
-};
-
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(["projects", "layouts"]);
   await chrome.storage.local.set({
@@ -11,13 +6,15 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const type = message?.type;
+    const scope = message?.scope;
+    const sourceWindowId = sender?.tab?.windowId;
     console.log("[Pastel Tab Projects] message:", type, message);
     switch (type) {
       case "GET_TABS": {
-        const tabs = await getTabsInScope(message.scope);
+        const tabs = await getTabsInScope(scope, sourceWindowId);
         const projects = await getProjects();
         sendResponse({ ok: true, tabs, projects });
         break;
@@ -36,12 +33,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
       case "SORT_TABS": {
-        await sortTabsInScope(message.scope);
+        await sortTabsInScope(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
       case "ORGANIZE": {
-        await organizeScope(message.scope);
+        await organizeScope(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
@@ -56,7 +53,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
       case "CLOSE_PROJECT_TABS": {
-        await closeProjectTabs(message.projectId, message.scope);
+        await closeProjectTabs(message.projectId, scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
@@ -66,12 +63,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
       case "CLOSE_DOMAIN_TABS": {
-        await closeDomainTabs(message.host, message.scope);
+        await closeDomainTabs(message.host, scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
       case "CLOSE_UNASSIGNED_TABS": {
-        await closeUnassignedTabs(message.scope);
+        await closeUnassignedTabs(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
@@ -86,12 +83,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
       case "SAVE_LAYOUT": {
-        await saveLayout(message.scope);
+        await saveLayout(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
       case "LOAD_LAYOUT": {
-        await loadLayout(message.scope);
+        await loadLayout(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
@@ -182,7 +179,7 @@ function stableClusterByHost(windowTabs, tabsSubset) {
   return result;
 }
 
-async function resolveWindowIds(scope) {
+async function resolveWindowIds(scope, sourceWindowId) {
   if (scope === "allWindows") {
     const wins = await chrome.windows.getAll({ populate: false });
     return wins.map((w) => w.id);
@@ -192,22 +189,33 @@ async function resolveWindowIds(scope) {
     return [scope.windowId];
   }
 
-  const current = await chrome.windows.getCurrent();
-  return [current.id];
+    if (Number.isInteger(sourceWindowId)) return [sourceWindowId];
+
+  try {
+    const current = await chrome.windows.getLastFocused({ populate: false });
+    if (Number.isInteger(current?.id)) return [current.id];
+  } catch (error) {
+    console.warn("resolveWindowIds fallback failed", error);
+  }
+
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (tabs[0] && Number.isInteger(tabs[0].windowId)) return [tabs[0].windowId];
+  const any = await chrome.windows.getAll({ populate: false });
+  return any.length ? [any[0].id] : [];
 }
 
-async function getTabsInScope(scope) {
-  const windowIds = await resolveWindowIds(scope);
+async function getTabsInScope(scope, sourceWindowId) {
+  const windowIds = await resolveWindowIds(scope, sourceWindowId);
   const all = [];
   for (const windowId of windowIds) {
     const tabs = await chrome.tabs.query({ windowId });
     all.push(...tabs);
   }
-  return all;
+  return all.filter((t) => !isDividerTab(t));
 }
 
-async function sortTabsInScope(scope) {
-  const windowIds = await resolveWindowIds(scope);
+async function sortTabsInScope(scope, sourceWindowId) {
+  const windowIds = await resolveWindowIds(scope, sourceWindowId);
   for (const windowId of windowIds) {
     const tabs = await chrome.tabs.query({ windowId });
     const nonDivider = tabs.filter((t) => !isDividerTab(t));
@@ -246,44 +254,48 @@ async function deleteProject(projectId) {
   await saveProjects(projects.filter((p) => p.id !== projectId));
 }
 
-async function closeProjectTabs(projectId, scope) {
+async function closeProjectTabs(projectId, scope, sourceWindowId) {
   const projects = await getProjects();
   const target = projects.find((p) => p.id === projectId);
   if (!target) return;
-  const inScope = await getTabsInScope(scope);
+  const inScope = await getTabsInScope(scope, sourceWindowId);
   const scopedIds = new Set(inScope.map((t) => t.id));
   const toClose = uniqueNumbers(target.tabIds).filter((id) => scopedIds.has(id));
-  if (toClose.length) await chrome.tabs.remove(toClose);
+  await closeTabsBestEffort(toClose);
   target.tabIds = uniqueNumbers(target.tabIds).filter((id) => !toClose.includes(id));
   await saveProjects(projects);
 }
 
-async function closeDomainTabs(host, scope) {
-  const tabs = await getTabsInScope(scope);
+async function closeDomainTabs(host, scope, sourceWindowId) {
+  const tabs = await getTabsInScope(scope, sourceWindowId);
   const toClose = tabs.filter((t) => parseHost(t.url || "") === host).map((t) => t.id);
-  if (toClose.length) await chrome.tabs.remove(toClose);
+  await closeTabsBestEffort(toClose);
   await pruneClosedTabIds();
 }
 
-async function closeUnassignedTabs(scope) {
-  const tabs = await getTabsInScope(scope);
+async function closeUnassignedTabs(scope, sourceWindowId) {
+  const tabs = await getTabsInScope(scope, sourceWindowId);
   const assigned = await assignedTabSet();
   const toClose = tabs.filter((t) => !assigned.has(t.id)).map((t) => t.id);
-  if (toClose.length) await chrome.tabs.remove(toClose);
+  await closeTabsBestEffort(toClose);
   await pruneClosedTabIds();
 }
 
 async function closeTab(tabId) {
   if (Number.isInteger(tabId)) {
-    await chrome.tabs.remove(tabId);
+    await closeTabsBestEffort([tabId]);
     await pruneClosedTabIds();
   }
 }
 
 async function activateTab(tabId) {
-  const tab = await chrome.tabs.get(tabId);
-  await chrome.windows.update(tab.windowId, { focused: true });
-  await chrome.tabs.update(tabId, { active: true });
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true });
+    await chrome.tabs.update(tabId, { active: true });
+  } catch (error) {
+    throw new Error(`Unable to activate tab ${tabId}: ${error.message || error}`);
+  }
 }
 
 async function assignedTabSet() {
@@ -303,6 +315,17 @@ async function pruneClosedTabIds() {
     p.tabIds = uniqueNumbers(p.tabIds).filter((id) => open.has(id));
   }
   await saveProjects(projects);
+}
+
+async function closeTabsBestEffort(tabIds) {
+  if (!Array.isArray(tabIds) || !tabIds.length) return;
+  for (const tabId of tabIds) {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch (error) {
+      console.warn("Failed to close tab", tabId, error);
+    }
+  }
 }
 
 async function moveTabSequence(windowId, tabIds) {
@@ -377,16 +400,16 @@ async function organizeWindow(windowId, projects) {
   }
 }
 
-async function organizeScope(scope) {
-  const windowIds = await resolveWindowIds(scope);
+async function organizeScope(scope, sourceWindowId) {
+  const windowIds = await resolveWindowIds(scope, sourceWindowId);
   const projects = await getProjects();
   for (const windowId of windowIds) {
     await organizeWindow(windowId, projects);
   }
 }
 
-async function saveLayout(scope) {
-  const windowIds = await resolveWindowIds(scope);
+async function saveLayout(scope, sourceWindowId) {
+  const windowIds = await resolveWindowIds(scope, sourceWindowId);
   const tabs = await chrome.tabs.query({});
   const projects = await getProjects();
   const layoutsBlob = await chrome.storage.local.get("layouts");
@@ -416,8 +439,8 @@ async function saveLayout(scope) {
   await chrome.storage.local.set({ layouts });
 }
 
-async function loadLayout(scope) {
-  const windowIds = await resolveWindowIds(scope);
+async function loadLayout(scope, sourceWindowId) {
+  const windowIds = await resolveWindowIds(scope, sourceWindowId);
   const { layouts } = await chrome.storage.local.get("layouts");
   if (!layouts || typeof layouts !== "object") return;
 
@@ -463,5 +486,5 @@ async function loadLayout(scope) {
   }
 
   await saveProjects(allProjects);
-  await organizeScope(scope);
+  await organizeScope(scope, sourceWindowId);
 }

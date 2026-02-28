@@ -11,30 +11,46 @@
   document.addEventListener("DOMContentLoaded", async () => {
     wireElements();
     if (!els.scopeSelect) return;
-    await populateScopeOptions();
     bindTopActions();
+    await populateScopeOptions();
     await refreshData();
   });
 
   function wireElements() {
     const ids = [
       "scopeSelect", "refreshBtn", "sortBtn", "organizeBtn", "saveLayoutBtn", "loadLayoutBtn", "openManagerBtn",
-      "projectName", "projectColor", "addProjectBtn", "websitesList", "projectsList"
+      "projectName", "projectColor", "addProjectBtn", "websitesList", "projectsList", "statusBar"
     ];
     for (const id of ids) {
       els[id] = document.getElementById(id);
     }
   }
 
+  function setStatus(message, isError = false) {
+    if (!els.statusBar) return;
+    els.statusBar.textContent = message || "";
+    els.statusBar.className = isError ? "status error" : "status";
+  }
+
   async function populateScopeOptions() {
-    const windows = await chrome.windows.getAll({ populate: false });
-    state.windows = windows;
     const select = els.scopeSelect;
     select.innerHTML = "";
     addOption(select, "currentWindow", "This window");
     addOption(select, "allWindows", "All windows");
-    for (const w of windows) {
-      addOption(select, `window:${w.id}`, `Window ${w.id}`);
+
+    try {
+      const windows = await chrome.windows.getAll({ populate: false });
+      state.windows = windows;
+      for (const w of windows) {
+        addOption(select, `window:${w.id}`, `Window ${w.id}`);
+      }
+    } catch (error) {
+      console.warn("Could not enumerate windows", error);
+      state.windows = [];
+    }
+
+    if (![...select.options].some((o) => o.value === state.scopeValue)) {
+      state.scopeValue = "currentWindow";
     }
     select.value = state.scopeValue;
   }
@@ -64,35 +80,68 @@
     els.organizeBtn.addEventListener("click", () => runAndRefresh("ORGANIZE"));
     els.saveLayoutBtn.addEventListener("click", () => runAndRefresh("SAVE_LAYOUT"));
     els.loadLayoutBtn.addEventListener("click", () => runAndRefresh("LOAD_LAYOUT"));
-    els.openManagerBtn.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") }));
+    els.openManagerBtn.addEventListener("click", () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") });
+    });
 
-    els.addProjectBtn.addEventListener("click", async () => {
+    async function createProject() {
       const name = (els.projectName.value || "").trim();
-      if (!name) return;
-      await sendMessage({ type: "CREATE_PROJECT", name, color: els.projectColor.value });
+      if (!name) {
+        setStatus("Enter a project name.", true);
+        return;
+      }
+      await sendMessageChecked({ type: "CREATE_PROJECT", name, color: els.projectColor.value });
       els.projectName.value = "";
+      setStatus("Project created.");
       await refreshData();
+    }
+
+    els.addProjectBtn.addEventListener("click", () => safeAction(createProject));
+    els.projectName.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        safeAction(createProject);
+      }
     });
   }
 
   async function runAndRefresh(type) {
-    await sendMessage({ type, scope: getScope() });
-    await refreshData();
+    await safeAction(async () => {
+      await sendMessageChecked({ type, scope: getScope() });
+      setStatus(`${type.replaceAll("_", " ").toLowerCase()} complete.`);
+      await refreshData();
+    });
+  }
+
+  async function safeAction(fn) {
+    try {
+      await fn();
+    } catch (error) {
+      console.error(error);
+      setStatus(String(error.message || error), true);
+    }
   }
 
   async function refreshData() {
     const scope = getScope();
     let payload;
+
     try {
-      payload = await sendMessage({ type: "GET_TABS", scope });
+      payload = await sendMessageChecked({ type: "GET_TABS", scope });
     } catch {
       payload = null;
     }
 
     if (!payload?.ok) {
-      const tabs = await chrome.tabs.query(scope === "currentWindow" ? { currentWindow: true } : (scope.windowId ? { windowId: scope.windowId } : {}));
+      const queryInfo = scope === "currentWindow"
+        ? { currentWindow: true }
+        : scope.windowId
+          ? { windowId: scope.windowId }
+          : {};
+      const tabs = await chrome.tabs.query(queryInfo);
       const { projects } = await chrome.storage.local.get("projects");
       payload = { ok: true, tabs, projects: Array.isArray(projects) ? projects : [] };
+      setStatus("Using fallback tab query (service worker unavailable).", true);
     }
 
     state.tabs = payload.tabs || [];
@@ -105,6 +154,7 @@
   function renderWebsites() {
     els.websitesList.innerHTML = "";
     const grouped = new Map();
+
     for (const tab of state.tabs) {
       const host = safeHost(tab.url);
       if (!grouped.has(host)) grouped.set(host, []);
@@ -122,16 +172,19 @@
       card.innerHTML = `
         <div class="card-header">
           <div class="card-title">${escapeHtml(host)} <span class="small-muted">(${tabs.length})</span></div>
-          <div class="card-actions"><button data-host-close="${escapeHtml(host)}">✕</button></div>
+          <div class="card-actions"><button data-host-close>✕</button></div>
         </div>
       `;
+
       const list = document.createElement("div");
       tabs.forEach((tab) => list.appendChild(tabRow(tab, { removeMode: "none" })));
       card.appendChild(list);
-      card.querySelector("[data-host-close]").addEventListener("click", async () => {
-        await sendMessage({ type: "CLOSE_DOMAIN_TABS", host, scope: getScope() });
+
+      card.querySelector("[data-host-close]").addEventListener("click", () => safeAction(async () => {
+        await sendMessageChecked({ type: "CLOSE_DOMAIN_TABS", host, scope: getScope() });
         await refreshData();
-      });
+      }));
+
       els.websitesList.appendChild(card);
     });
   }
@@ -152,9 +205,9 @@
         <div class="card-header">
           <div class="card-title"><span class="host-pill" style="background:${project.color}"></span>${escapeHtml(project.name)}</div>
           <div class="card-actions">
-            <button data-organize>▦</button>
-            <button data-close>✕</button>
-            <button data-delete>🗑</button>
+            <button data-organize title="Organize scope">▦</button>
+            <button data-close title="Close all tabs in project">✕</button>
+            <button data-delete title="Delete project">🗑</button>
           </div>
         </div>
       `;
@@ -169,29 +222,33 @@
         e.preventDefault();
         card.classList.add("over");
       });
+
       card.addEventListener("dragleave", () => card.classList.remove("over"));
-      card.addEventListener("drop", async (e) => {
+
+      card.addEventListener("drop", (e) => safeAction(async () => {
         e.preventDefault();
         card.classList.remove("over");
         const tabId = Number(e.dataTransfer.getData("text/tab-id"));
         if (Number.isInteger(tabId)) {
-          await sendMessage({ type: "ADD_TAB_TO_PROJECT", tabId, projectId: project.id });
+          await sendMessageChecked({ type: "ADD_TAB_TO_PROJECT", tabId, projectId: project.id });
           await refreshData();
         }
-      });
+      }));
 
-      card.querySelector("[data-organize]").addEventListener("click", async () => {
-        await sendMessage({ type: "ORGANIZE", scope: getScope() });
+      card.querySelector("[data-organize]").addEventListener("click", () => safeAction(async () => {
+        await sendMessageChecked({ type: "ORGANIZE", scope: getScope() });
         await refreshData();
-      });
-      card.querySelector("[data-close]").addEventListener("click", async () => {
-        await sendMessage({ type: "CLOSE_PROJECT_TABS", projectId: project.id, scope: getScope() });
+      }));
+
+      card.querySelector("[data-close]").addEventListener("click", () => safeAction(async () => {
+        await sendMessageChecked({ type: "CLOSE_PROJECT_TABS", projectId: project.id, scope: getScope() });
         await refreshData();
-      });
-      card.querySelector("[data-delete]").addEventListener("click", async () => {
-        await sendMessage({ type: "DELETE_PROJECT", projectId: project.id });
+      }));
+
+      card.querySelector("[data-delete]").addEventListener("click", () => safeAction(async () => {
+        await sendMessageChecked({ type: "DELETE_PROJECT", projectId: project.id });
         await refreshData();
-      });
+      }));
 
       els.projectsList.appendChild(card);
     });
@@ -201,18 +258,21 @@
     unassignedCard.innerHTML = `
       <div class="card-header">
         <div class="card-title"><span class="host-pill" style="background:#f9c5d5"></span>Unassigned</div>
-        <div class="card-actions"><button data-close-unassigned>✕</button></div>
+        <div class="card-actions"><button data-close-unassigned title="Close all unassigned tabs">✕</button></div>
       </div>
     `;
+
     const unassignedList = document.createElement("div");
     const unassignedTabs = state.tabs.filter((t) => !assigned.has(t.id));
     if (!unassignedTabs.length) unassignedList.appendChild(empty("No unassigned tabs."));
     unassignedTabs.forEach((tab) => unassignedList.appendChild(tabRow(tab, { removeMode: "none", draggable: true })));
     unassignedCard.appendChild(unassignedList);
-    unassignedCard.querySelector("[data-close-unassigned]").addEventListener("click", async () => {
-      await sendMessage({ type: "CLOSE_UNASSIGNED_TABS", scope: getScope() });
+
+    unassignedCard.querySelector("[data-close-unassigned]").addEventListener("click", () => safeAction(async () => {
+      await sendMessageChecked({ type: "CLOSE_UNASSIGNED_TABS", scope: getScope() });
       await refreshData();
-    });
+    }));
+
     els.projectsList.appendChild(unassignedCard);
   }
 
@@ -229,15 +289,18 @@
     title.className = "tab-title";
     title.textContent = tab.title || tab.url || `Tab ${tab.id}`;
     title.title = tab.url || "";
-    title.addEventListener("click", async (e) => {
+    title.addEventListener("click", (e) => safeAction(async () => {
       e.preventDefault();
-      await sendMessage({ type: "ACTIVATE_TAB", tabId: tab.id });
-    });
+      await sendMessageChecked({ type: "ACTIVATE_TAB", tabId: tab.id });
+    }));
 
     const go = document.createElement("button");
     go.textContent = "↗";
     go.className = "tab-btn";
-    go.addEventListener("click", async () => sendMessage({ type: "ACTIVATE_TAB", tabId: tab.id }));
+    go.title = "Go to tab";
+    go.addEventListener("click", () => safeAction(async () => {
+      await sendMessageChecked({ type: "ACTIVATE_TAB", tabId: tab.id });
+    }));
 
     const right = document.createElement("div");
     right.style.display = "flex";
@@ -247,30 +310,37 @@
       const remove = document.createElement("button");
       remove.textContent = "−";
       remove.className = "tab-btn";
-      remove.addEventListener("click", async () => {
-        await sendMessage({ type: "REMOVE_TAB_FROM_PROJECT", tabId: tab.id, projectId: opts.projectId });
+      remove.title = "Remove from project";
+      remove.addEventListener("click", () => safeAction(async () => {
+        await sendMessageChecked({ type: "REMOVE_TAB_FROM_PROJECT", tabId: tab.id, projectId: opts.projectId });
         await refreshData();
-      });
+      }));
       right.appendChild(remove);
     }
 
     const close = document.createElement("button");
     close.textContent = "✕";
     close.className = "tab-btn";
-    close.addEventListener("click", async () => {
-      await sendMessage({ type: "CLOSE_TAB", tabId: tab.id });
+    close.title = "Close tab";
+    close.addEventListener("click", () => safeAction(async () => {
+      await sendMessageChecked({ type: "CLOSE_TAB", tabId: tab.id });
       await refreshData();
-    });
+    }));
     right.appendChild(close);
 
     row.appendChild(title);
     row.appendChild(go);
     row.appendChild(right);
+
     return row;
   }
 
   function safeHost(url) {
-    try { return new URL(url).hostname || "(no host)"; } catch { return "(invalid)"; }
+    try {
+      return new URL(url).hostname || "(no host)";
+    } catch {
+      return "(invalid)";
+    }
   }
 
   function empty(text) {
@@ -300,5 +370,13 @@
         resolve(response);
       });
     });
+  }
+
+  async function sendMessageChecked(payload) {
+    const response = await sendMessage(payload);
+    if (!response?.ok) {
+      throw new Error(response?.error || `Request failed: ${payload.type}`);
+    }
+    return response;
   }
 })();
