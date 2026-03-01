@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const type = normalizeMessageType(rawType);
     const scope = message?.scope;
     const sourceWindowId = sender?.tab?.windowId;
-    console.log("[Pastel Tab Projects] message:", type, message);
+    console.log("[TabOrganizer] message:", type, message);
     switch (type) {
       case "GET_TABS": {
         const tabs = await getTabsInScope(scope, sourceWindowId);
@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: `Unknown message type: ${type || "(empty)"}`, received: message });
     }
   })().catch((error) => {
-    console.error("[Pastel Tab Projects] message handler error", error);
+    console.error("[TabOrganizer] message handler error", error);
     sendResponse({ ok: false, error: String(error) });
   });
 
@@ -352,8 +352,8 @@ async function moveTabSequence(windowId, tabIds) {
   }
 }
 
-async function createDivider(windowId, color, nextName, index) {
-  const url = `${chrome.runtime.getURL("divider.html")}?color=${encodeURIComponent(color)}&name=${encodeURIComponent(nextName || "")}`;
+async function createDivider(windowId, color, index) {
+  const url = `${chrome.runtime.getURL("divider.html")}?color=${encodeURIComponent(color)}`;
   await chrome.tabs.create({
     windowId,
     index,
@@ -406,7 +406,7 @@ async function organizeWindow(windowId, projects) {
     insertIndex += sections[i].tabs.length;
     if (i < sections.length - 1) {
       const next = sections[i + 1];
-      await createDivider(windowId, next.color, next.name, insertIndex);
+      await createDivider(windowId, next.color, insertIndex);
       insertIndex += 1;
     }
   }
