@@ -1,4 +1,4 @@
-# Pastel Tab Projects (Chrome Extension, MV3)
+# TabOrganizer (Chrome Extension, MV3)
 
 A pink-forward tab manager extension that lets you group real Chrome tabs into Projects, sort tabs, and organize each window with visual divider tabs.
 
@@ -16,7 +16,6 @@ A pink-forward tab manager extension that lets you group real Chrome tabs into P
   - Sort Tabs: host, then title.
   - Organize Projects: project-by-project layout with hostname clustering and divider tabs between sections.
 - Divider tabs are minimal blank pages with a colored circle favicon.
-- Save Layout / Load Layout using `chrome.storage.local.layouts`.
 - Project operations:
   - Organize project scope
   - Close all tabs in project (scope-aware)
@@ -42,7 +41,6 @@ A pink-forward tab manager extension that lets you group real Chrome tabs into P
 6. Verify divider tabs appear between sections and are not pinned.
 7. Verify tabs are clustered by host in each section and Unassigned is final.
 8. Verify website/project close-all actions and project deletion.
-9. Use **Save Layout**, then close some tabs and run **Load Layout** to best-effort restore and re-organize.
 
 ## Files
 - `manifest.json`
@@ -51,4 +49,4 @@ A pink-forward tab manager extension that lets you group real Chrome tabs into P
 - `manager.html`, `manager.css`, `manager.js`
 - `app.js` (shared UI logic)
 - `divider.html`, `divider.css`, `divider.js`
-- No binary icon assets are included (avoids PR systems that reject binary diffs).
+- No binary icon assets are included (repository stays text-only).

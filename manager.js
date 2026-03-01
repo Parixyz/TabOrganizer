@@ -1,1 +1,1 @@
-console.log("Pastel Tab Projects manager loaded");
+console.log("TabOrganizer manager loaded");
