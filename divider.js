@@ -14,6 +14,7 @@
   favicon.rel = "icon";
   favicon.href = canvas.toDataURL("image/png");
   document.head.appendChild(favicon);
-  document.title = "";
+  // Keep divider tabs visually tiny instead of showing full chrome-extension URL fallback.
+  document.title = "·";
   history.replaceState(null, "", location.pathname);
 })();

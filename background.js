@@ -10,10 +10,9 @@ function normalizeMessageType(rawType) {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get(["projects", "layouts"]);
+  const current = await chrome.storage.local.get(["projects"]);
   await chrome.storage.local.set({
-    projects: Array.isArray(current.projects) ? current.projects : [],
-    layouts: current.layouts && typeof current.layouts === "object" ? current.layouts : {}
+    projects: Array.isArray(current.projects) ? current.projects : []
   });
 });
 
@@ -91,16 +90,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case "ACTIVATE_TAB": {
         await activateTab(message.tabId);
-        sendResponse({ ok: true });
-        break;
-      }
-      case "SAVE_LAYOUT": {
-        await saveLayout(scope, sourceWindowId);
-        sendResponse({ ok: true });
-        break;
-      }
-      case "LOAD_LAYOUT": {
-        await loadLayout(scope, sourceWindowId);
         sendResponse({ ok: true });
         break;
       }
@@ -420,83 +409,3 @@ async function organizeScope(scope, sourceWindowId) {
   }
 }
 
-async function saveLayout(scope, sourceWindowId) {
-  const windowIds = await resolveWindowIds(scope, sourceWindowId);
-  const tabs = await chrome.tabs.query({});
-  const projects = await getProjects();
-  const layoutsBlob = await chrome.storage.local.get("layouts");
-  const layouts = layoutsBlob.layouts && typeof layoutsBlob.layouts === "object" ? layoutsBlob.layouts : {};
-
-  for (const windowId of windowIds) {
-    const windowTabs = tabs.filter((t) => t.windowId === windowId && !isInternalUrl(t.url) && !isDividerTab(t));
-    layouts[String(windowId)] = {
-      savedAt: new Date().toISOString(),
-      tabs: windowTabs.map((t) => ({
-        url: t.url,
-        title: t.title || "",
-        host: parseHost(t.url || "")
-      })),
-      projectsSnapshot: projects.map((p) => ({
-        id: p.id,
-        name: p.name,
-        color: p.color,
-        tabIds: uniqueNumbers(p.tabIds).filter((id) => windowTabs.some((t) => t.id === id)),
-        urls: uniqueNumbers(p.tabIds)
-          .map((id) => windowTabs.find((t) => t.id === id)?.url)
-          .filter(Boolean)
-      }))
-    };
-  }
-
-  await chrome.storage.local.set({ layouts });
-}
-
-async function loadLayout(scope, sourceWindowId) {
-  const windowIds = await resolveWindowIds(scope, sourceWindowId);
-  const { layouts } = await chrome.storage.local.get("layouts");
-  if (!layouts || typeof layouts !== "object") return;
-
-  const allProjects = await getProjects();
-
-  for (const windowId of windowIds) {
-    const key = String(windowId);
-    const layout = layouts[key];
-    if (!layout) continue;
-
-    const existingTabs = await chrome.tabs.query({ windowId });
-    const existingUrls = new Set(existingTabs.map((t) => t.url));
-
-    for (const item of layout.tabs || []) {
-      if (!item?.url || isInternalUrl(item.url)) continue;
-      if (!existingUrls.has(item.url)) {
-        await chrome.tabs.create({ windowId, url: item.url, active: false });
-        existingUrls.add(item.url);
-      }
-    }
-
-    const refreshedTabs = await chrome.tabs.query({ windowId });
-    const byUrl = new Map();
-    for (const tab of refreshedTabs) {
-      if (!byUrl.has(tab.url)) byUrl.set(tab.url, []);
-      byUrl.get(tab.url).push(tab.id);
-    }
-
-    for (const snapshot of layout.projectsSnapshot || []) {
-      const target = allProjects.find((p) => p.id === snapshot.id);
-      if (!target) continue;
-      for (const url of snapshot.urls || []) {
-        const ids = byUrl.get(url) || [];
-        if (!ids.length) continue;
-        const id = ids[0];
-        for (const p of allProjects) {
-          p.tabIds = uniqueNumbers(p.tabIds).filter((tabId) => tabId !== id);
-        }
-        target.tabIds.push(id);
-      }
-      target.tabIds = uniqueNumbers(target.tabIds);
-    }
-  }
-
-  await saveProjects(allProjects);
-  await organizeScope(scope, sourceWindowId);
-}

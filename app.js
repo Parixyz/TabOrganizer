@@ -18,7 +18,7 @@
 
   function wireElements() {
     const ids = [
-      "scopeSelect", "refreshBtn", "sortBtn", "organizeBtn", "saveLayoutBtn", "loadLayoutBtn", "openManagerBtn",
+      "scopeSelect", "refreshBtn", "sortBtn", "organizeBtn", "openManagerBtn",
       "projectName", "projectColor", "addProjectBtn", "websitesList", "projectsList", "statusBar"
     ];
     for (const id of ids) {
@@ -78,8 +78,6 @@
     els.refreshBtn.addEventListener("click", refreshData);
     els.sortBtn.addEventListener("click", () => runAndRefresh("SORT_TABS"));
     els.organizeBtn.addEventListener("click", () => runAndRefresh("ORGANIZE"));
-    els.saveLayoutBtn.addEventListener("click", () => runAndRefresh("SAVE_LAYOUT"));
-    els.loadLayoutBtn.addEventListener("click", () => runAndRefresh("LOAD_LAYOUT"));
     els.openManagerBtn.addEventListener("click", () => {
       chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") });
     });
