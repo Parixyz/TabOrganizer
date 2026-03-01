@@ -1,4 +1,4 @@
-# Pastel Tab Projects (Chrome Extension, MV3)
+# TabOrganizer (Chrome Extension, MV3)
 
 A pink-forward tab manager extension that lets you group real Chrome tabs into Projects, sort tabs, and organize each window with visual divider tabs.
 
@@ -51,4 +51,4 @@ A pink-forward tab manager extension that lets you group real Chrome tabs into P
 - `manager.html`, `manager.css`, `manager.js`
 - `app.js` (shared UI logic)
 - `divider.html`, `divider.css`, `divider.js`
-- No binary icon assets are included (avoids PR systems that reject binary diffs).
+- No binary icon assets are included (repository stays text-only).

@@ -15,4 +15,5 @@
   favicon.href = canvas.toDataURL("image/png");
   document.head.appendChild(favicon);
   document.title = "";
+  history.replaceState(null, "", location.pathname);
 })();

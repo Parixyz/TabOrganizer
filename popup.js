@@ -1,1 +1,1 @@
-console.log("Pastel Tab Projects popup loaded");
+console.log("TabOrganizer popup loaded");
