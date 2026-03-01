@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Pastel Tab Projects",
-  "description": "Manage tabs with pastel project grouping, sorting, and layouts.",
+  "name": "TabOrganizer",
+  "description": "Manage tabs with pink project grouping, sorting, and layouts.",
   "version": "1.0.0",
   "permissions": [
     "tabs",
@@ -15,7 +15,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Pastel Tab Projects"
+    "default_title": "TabOrganizer"
   },
   "options_page": "manager.html"
 }
